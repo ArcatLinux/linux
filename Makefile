@@ -2,8 +2,8 @@
 VERSION = 6
 PATCHLEVEL = 17
 SUBLEVEL = 0
-EXTRAVERSION = -rc1
-NAME = Baby Opossum Posse
+EXTRAVERSION = .arcat1-1
+NAME = Cat Arcat
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"

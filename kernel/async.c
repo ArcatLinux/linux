@@ -58,7 +58,7 @@ asynchronous and synchronous parts of the kernel.
 
 static async_cookie_t next_cookie = 1;
 
-#define MAX_WORK		32768
+#define MAX_WORK        65536
 #define ASYNC_COOKIE_MAX	ULLONG_MAX	/* infinity cookie */
 
 static LIST_HEAD(async_global_pending);	/* pending from all registered doms */
@@ -104,7 +104,7 @@ static async_cookie_t lowest_in_progress(struct async_domain *domain)
 					struct async_entry, global_list);
 	}
 
-	if (first)
+	if (likely(first))
 		ret = first->cookie;
 
 	spin_unlock_irqrestore(&async_lock, flags);
@@ -211,7 +211,7 @@ async_cookie_t async_schedule_node_domain(async_func_t func, void *data,
 	 * If we're out of memory or if there's too much work
 	 * pending already, we execute synchronously.
 	 */
-	if (!entry || atomic_read(&entry_count) > MAX_WORK) {
+	if (unlikely(!entry) || unlikely(atomic_read(&entry_count) > MAX_WORK)) {
 		kfree(entry);
 		spin_lock_irqsave(&async_lock, flags);
 		newcookie = next_cookie++;
@@ -264,7 +264,7 @@ bool async_schedule_dev_nocall(async_func_t func, struct device *dev)
 	entry = kzalloc(sizeof(struct async_entry), GFP_KERNEL);
 
 	/* Give up if there is no memory or too much work. */
-	if (!entry || atomic_read(&entry_count) > MAX_WORK) {
+	if (unlikely(!entry) || unlikely(atomic_read(&entry_count) > MAX_WORK)) {
 		kfree(entry);
 		return false;
 	}
@@ -349,14 +349,22 @@ EXPORT_SYMBOL_GPL(current_is_async);
 
 void __init async_init(void)
 {
-	/*
-	 * Async can schedule a number of interdependent work items. However,
-	 * unbound workqueues can handle only upto min_active interdependent
-	 * work items. The default min_active of 8 isn't sufficient for async
-	 * and can lead to stalls. Let's use a dedicated workqueue with raised
-	 * min_active.
-	 */
-	async_wq = alloc_workqueue("async", WQ_UNBOUND, 0);
-	BUG_ON(!async_wq);
-	workqueue_set_min_active(async_wq, WQ_DFL_ACTIVE);
-}
+    int cpu_count = num_online_cpus();
+    int factor;
+
+    // если ядер мало - включаем картошка режим
+    if (cpu_count <= 2)
+        factor = (cpu_count * 5) / 2;  // 2.5x КАПЕЦ У ТЕБЯ КОМП МОЩЬ
+    else if (cpu_count <= 8)
+        factor = (cpu_count * 3) / 2;  // 1.5x ну так среднячок лол
+    else
+        factor = cpu_count * 1;        // 1x, чтобы ничего не раздолбалось к хренам
+
+    int maxa = max(factor, WQ_DFL_ACTIVE);
+
+    async_wq = alloc_workqueue("async", WQ_UNBOUND | WQ_HIGHPRI, 0);
+    BUG_ON(!async_wq);
+    workqueue_set_min_active(async_wq, maxa);
+} // кто вообще писал этот шедевр :? Я
+
+

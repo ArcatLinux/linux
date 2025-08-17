@@ -9,32 +9,37 @@
 #include <linux/smp.h>
 #include <linux/hypervisor.h>
 
-int smp_call_function_single(int cpu, void (*func) (void *info), void *info,
-				int wait)
+static inline int up_call_helper(void (*func)(void *), void *info)
 {
-	unsigned long flags;
+    unsigned long flags;
+    if (!func)
+        return -EINVAL;
 
-	if (cpu != 0)
-		return -ENXIO;
+    local_irq_save(flags);
+    func(info);
+    local_irq_restore(flags);
 
-	local_irq_save(flags);
-	func(info);
-	local_irq_restore(flags);
+    return 0;
+}
 
-	return 0;
+int smp_call_function_single(int cpu, void (*func)(void *info), void *info, int wait)
+{
+    if (cpu != 0)
+        return -ENXIO; 
+    return up_call_helper(func, info);
 }
 EXPORT_SYMBOL(smp_call_function_single);
 
 int smp_call_function_single_async(int cpu, call_single_data_t *csd)
 {
-	unsigned long flags;
-
-	local_irq_save(flags);
-	csd->func(csd->info);
-	local_irq_restore(flags);
-	return 0;
+    if (!csd)
+        return -EINVAL;
+    if (cpu != 0)
+        return -ENXIO;
+    return up_call_helper(csd->func, csd->info);
 }
 EXPORT_SYMBOL(smp_call_function_single_async);
+
 
 /*
  * Preemption is disabled here to make sure the cond_func is called under the
